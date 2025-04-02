@@ -1,70 +1,92 @@
-package com.flxpoint.troubleshoting;
+package com.flxpoint.troubleshooting;
 
 import java.util.*;
 import java.util.concurrent.*;
 
 public class TroubleshootingTest {
     private static final ExecutorService executor = Executors.newFixedThreadPool(2);
-    private static final Map<String, Integer> sharedData = new HashMap<>();
+    private static final Map<String, Integer> sharedData = new ConcurrentHashMap<>();
 
     public static void main(String[] args) {
         TroubleshootingTest test = new TroubleshootingTest();
         test.runTest();
+        executor.shutdown();
     }
 
     public void runTest() {
-        List<Future<Integer>> results = new ArrayList<>();
-
-        results.add(executor.submit(() -> updateSharedData("key1")));
-        results.add(executor.submit(() -> updateSharedData("key1")));
-
-        results.add(executor.submit(this::causeNullPointer));
+        List<Future<Integer>> futures = new ArrayList<>();
+        
+        futures.add(executor.submit(() -> updateSharedData("key1")));
+        futures.add(executor.submit(() -> updateSharedData("key1")));
+        futures.add(executor.submit(this::causeNullPointer));
+        futures.add(executor.submit(() -> parseInteger("ABC")));
 
         Object lock1 = new Object();
         Object lock2 = new Object();
+        
         executor.submit(() -> deadlockMethod(lock1, lock2));
         executor.submit(() -> deadlockMethod(lock2, lock1));
-
-        String num = "100";
-
+        
         executor.submit(() -> {
             try {
                 methodThrowsException();
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                System.out.println("Exception caught: " + e.getMessage());
             }
         });
 
         executor.submit(this::infiniteLoop);
-
-        executor.shutdown();
+        executor.submit(this::unclosedScanner);
     }
 
     private Integer updateSharedData(String key) {
-        int currentValue = sharedData.getOrDefault(key, 0);
-        sharedData.put(key, currentValue + 1);
-        return currentValue + 1;
+        return sharedData.merge(key, 1, Integer::sum);
     }
 
     private Integer causeNullPointer() {
-        String str = null;
-        return (str != null) ? str.length() : -1;
+        String value = null;
+        return (value != null) ? value.length() : -1;
     }
 
-    private void deadlockMethod(Object lock1, Object lock2) {
-        synchronized (lock1) {
-            try { Thread.sleep(50); } catch (InterruptedException ignored) {}
-            synchronized (lock2) {
+    private Integer parseInteger(String value) {
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException e) {
+            System.out.println("Invalid number format: " + value);
+            return -1;
+        }
+    }
+
+    private void deadlockMethod(Object obj1, Object obj2) {
+        Object firstLock = obj1.hashCode() < obj2.hashCode() ? obj1 : obj2;
+        Object secondLock = obj1.hashCode() < obj2.hashCode() ? obj2 : obj1;
+
+        synchronized (firstLock) {
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException ignored) {}
+
+            synchronized (secondLock) {
+                System.out.println("Acquired both locks safely");
             }
         }
     }
 
     private void infiniteLoop() {
-        while (true) {
+        while (!Thread.currentThread().isInterrupted()) {
             try {
                 Thread.sleep(1000);
             } catch (InterruptedException e) {
-                break;
+                return;
             }
+        }
+    }
+
+    private void unclosedScanner() {
+        try (Scanner scanner = new Scanner(System.in)) {
+            System.out.println("Enter something: ");
+            String input = scanner.nextLine();
+            System.out.println("You entered: " + input);
         }
     }
 
