@@ -18,7 +18,7 @@ public class TroubleshootingTest {
         results.add(executor.submit(() -> updateSharedData("key1")));
         results.add(executor.submit(() -> updateSharedData("key1")));
 
-        results.add(executor.submit(() -> causeNullPointer()));
+        results.add(executor.submit(this::causeNullPointer));
 
         results.add(executor.submit(() -> parseInteger("ABC")));
 
@@ -27,11 +27,15 @@ public class TroubleshootingTest {
         executor.submit(() -> deadlockMethod(lock1, lock2));
         executor.submit(() -> deadlockMethod(lock2, lock1));
 
-        executor.submit(() -> missingMethod());
+        String num = "100"; // Fixed type mismatch
 
-        String num = 100;
-
-        executor.submit(() -> methodThrowsException());
+        executor.submit(() -> {
+            try {
+                methodThrowsException();
+            } catch (Exception e) {
+                System.out.println("Exception caught: " + e.getMessage());
+            }
+        });
 
         executor.submit(this::infiniteLoop);
 
@@ -48,11 +52,16 @@ public class TroubleshootingTest {
 
     private Integer causeNullPointer() {
         String str = null;
-        return str.length();
+        return (str != null) ? str.length() : -1; // Prevents NullPointerException
     }
 
     private Integer parseInteger(String value) {
-        return Integer.parseInt(value);
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException e) {
+            System.out.println("Invalid number format: " + value);
+            return -1;
+        }
     }
 
     private void deadlockMethod(Object lock1, Object lock2) {
@@ -65,14 +74,21 @@ public class TroubleshootingTest {
     }
 
     private void infiniteLoop() {
-        while (true) { }
+        while (true) {
+            try {
+                Thread.sleep(1000); // Avoids CPU overuse
+            } catch (InterruptedException e) {
+                break;
+            }
+        }
     }
 
     private void unclosedScanner() {
-        Scanner scanner = new Scanner(System.in);
-        System.out.println("Enter something: ");
-        String input = scanner.nextLine();
-        System.out.println("You entered: " + input);
+        try (Scanner scanner = new Scanner(System.in)) {
+            System.out.println("Enter something: ");
+            String input = scanner.nextLine();
+            System.out.println("You entered: " + input);
+        }
     }
 
     private void methodThrowsException() throws Exception {
